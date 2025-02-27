@@ -1,7 +1,6 @@
 [project]
 name = "class-voting-streamlit"
 version = "0.1.0"
-package-mode = false
 description = "Add your description here"
 readme = "README.md"
 requires-python = ">=3.12"
@@ -12,3 +11,6 @@ dependencies = [
     "streamlit>=1.42.2",
     "watchdog>=6.0.0",
 ]
+
+[tool.setuptools]
+packages = ["class_voting_streamlit"]
