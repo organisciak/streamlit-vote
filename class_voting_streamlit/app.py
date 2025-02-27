@@ -65,6 +65,14 @@ def main():
     # App header
     st.title("AI Ethics Collaborative Voting")
     
+    # Initialize session state variables
+    if "app_mode" not in st.session_state:
+        st.session_state.app_mode = "idea_submission"
+    if "class_code" not in st.session_state:
+        st.session_state.class_code = ""
+    if "authenticated" not in st.session_state:
+        st.session_state.authenticated = False
+    
     # Class access authentication
     if not st.session_state.authenticated:
         st.header("Class Access")
