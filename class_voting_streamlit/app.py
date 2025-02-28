@@ -226,7 +226,14 @@ def main():
             
             # Display all ideas without categorization
             for i, idea_data in enumerate(data["ideas"]):
-                st.markdown(f"**Scenario {i+1}:** {idea_data['idea']} _(by {idea_data['submitted_by']})_")
+                # Check if idea_data has the required fields
+                if isinstance(idea_data, dict) and 'idea' in idea_data and 'submitted_by' in idea_data:
+                    st.markdown(f"**Scenario {i+1}:** {idea_data['idea']} _(by {idea_data['submitted_by']})_")
+                else:
+                    # Handle case where idea data is malformed
+                    idea_text = idea_data.get('idea', 'Unknown scenario') if isinstance(idea_data, dict) else 'Unknown scenario'
+                    submitted_by = idea_data.get('submitted_by', 'Unknown') if isinstance(idea_data, dict) else 'Unknown'
+                    st.markdown(f"**Scenario {i+1}:** {idea_text} _(by {submitted_by})_")
     
     with voting_tab:
         st.header("Vote on AI Ethics Scenarios")
@@ -328,8 +335,13 @@ def main():
                     
                     with st.container():
                         st.divider()
-                        # Display idea without category and submitter's name
-                        st.markdown(f"**Scenario:** {idea_data['idea']}")
+                        # Display idea without category and submitter's name - handle missing data
+                        if isinstance(idea_data, dict) and 'idea' in idea_data:
+                            st.markdown(f"**Scenario:** {idea_data['idea']}")
+                        else:
+                            # Fallback for malformed data
+                            idea_text = idea_data.get('idea', 'Unknown scenario') if isinstance(idea_data, dict) else 'Unknown scenario'
+                            st.markdown(f"**Scenario:** {idea_text}")
                         
                         # Get current vote value - default to 0 (no vote)
                         current_value = 0
@@ -490,16 +502,32 @@ def main():
                 # Use prefixed idea_id to match the new format
                 idea_id = f"idea_{i}"
                 
+                # Extract idea details with fallbacks for missing data
+                if isinstance(idea_data, dict):
+                    idea_text = idea_data.get('idea', 'Unknown scenario')
+                    submitted_by = idea_data.get('submitted_by', 'Unknown')
+                else:
+                    idea_text = 'Unknown scenario'
+                    submitted_by = 'Unknown'
+                
                 # Collect all votes for this scenario
                 votes = []
                 if "votes" in data:
                     for voter, voter_votes in data["votes"].items():
                         # Check if voter_votes is a dictionary and contains this idea_id
                         if isinstance(voter_votes, dict) and idea_id in voter_votes:
-                            votes.append(int(voter_votes[idea_id]))
+                            try:
+                                votes.append(int(voter_votes[idea_id]))
+                            except (ValueError, TypeError):
+                                # Skip invalid votes
+                                pass
                         # Handle legacy array format
                         elif isinstance(voter_votes, list) and i < len(voter_votes):
-                            votes.append(int(voter_votes[i]))
+                            try:
+                                votes.append(int(voter_votes[i]))
+                            except (ValueError, TypeError):
+                                # Skip invalid votes
+                                pass
                 
                 # Fix: Handle case when there are no votes
                 avg_score = sum(votes) / len(votes) if votes else 0
@@ -507,8 +535,8 @@ def main():
                 
                 results.append({
                     "idea_num": i + 1,
-                    "idea": idea_data["idea"],
-                    "submitted_by": idea_data["submitted_by"],
+                    "idea": idea_text,
+                    "submitted_by": submitted_by,
                     "avg_score": avg_score,
                     "num_votes": num_votes
                 })
