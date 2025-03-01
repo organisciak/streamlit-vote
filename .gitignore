@@ -8,3 +8,11 @@ wheels/
 
 # Virtual environments
 .venv
+
+# Streamlit secrets (contains sensitive information)
+.streamlit/secrets.toml
+
+# Local development files
+*.lock
+SPEC.md
+hello.py
