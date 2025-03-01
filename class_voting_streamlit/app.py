@@ -61,9 +61,20 @@ def get_class_codes():
         return response.json()
     return {}
 
+def get_teacher_password():
+    """Get teacher password from Streamlit secrets or use fallback"""
+    try:
+        return st.secrets["teacher_password"]
+    except (KeyError, FileNotFoundError):
+        # Fallback for local development
+        return "teacherpass"
+
 def main():
     # App header
     st.title("AI Ethics Collaborative Voting")
+    
+    # Get teacher password from secrets
+    teacher_password = get_teacher_password()
     
     # Initialize session state variables
     if "app_mode" not in st.session_state:
@@ -102,7 +113,7 @@ def main():
             new_class_code = st.text_input("Create Class Code:")
             
             if st.button("Create Class"):
-                if teacher_password != "teacherpass":
+                if teacher_password != get_teacher_password():
                     st.error("Incorrect teacher password")
                 elif not new_class_name or not new_class_code:
                     st.error("Please provide both class name and code")
@@ -152,7 +163,7 @@ def main():
         # Reset button (only shown to teacher)
         teacher_password = st.text_input("Teacher Password (for reset)", type="password")
         if st.button("Reset All Data"):
-            if teacher_password == "teacherpass":  # Simple password protection
+            if teacher_password == get_teacher_password():  # Password from secrets
                 if save_data({"ideas": [], "votes": {}}, st.session_state.class_code):
                     st.success("Data reset successfully!")
                     time.sleep(1)
