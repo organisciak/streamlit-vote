@@ -3,8 +3,27 @@ import json
 import requests
 import time
 import random
+import firebase_admin
+from firebase_admin import credentials, db
 
+# Firebase configuration
 FIREBASE_URL = "https://ai-ia-6ff81-default-rtdb.firebaseio.com/"
+
+# Initialize Firebase with credentials if not already initialized
+if not firebase_admin._apps:
+    try:
+        # Try to load from Streamlit secrets
+        # Firebase admin SDK expects a dictionary, not an object with attributes
+        firebase_config = dict(st.secrets["firebase"])
+        cred = credentials.Certificate(firebase_config)
+        firebase_admin.initialize_app(cred, {
+            'databaseURL': FIREBASE_URL
+        })
+    except (KeyError, FileNotFoundError, json.JSONDecodeError):
+        # Fallback for local development - will use public access rules
+        # This will be removed once proper authentication is set up
+        print("Warning: Using unauthenticated Firebase access. Set up firebase_credentials in secrets.toml")
+        pass
 
 # Initialize session state for app mode and class access
 if "app_mode" not in st.session_state:
@@ -20,9 +39,19 @@ def get_data(class_code=None):
     if not class_code:
         class_code = st.session_state.class_code
     
-    response = requests.get(f"{FIREBASE_URL}/classes/{class_code}.json")
-    if response.status_code == 200:
-        data = response.json()
+    try:
+        # Try to use Firebase Admin SDK if initialized
+        if firebase_admin._apps:
+            ref = db.reference(f"/classes/{class_code}")
+            data = ref.get()
+        else:
+            # Fallback to unauthenticated access
+            response = requests.get(f"{FIREBASE_URL}/classes/{class_code}.json")
+            if response.status_code == 200:
+                data = response.json()
+            else:
+                return {"ideas": [], "votes": {}}
+        
         if data:
             # Convert any array-based votes to object format
             if "votes" in data:
@@ -33,33 +62,62 @@ def get_data(class_code=None):
                         for i, vote in enumerate(votes):
                             object_votes[f"idea_{i}"] = vote
                         data["votes"][voter] = object_votes
+                        
                         # Save the converted format back to Firebase
-                        requests.put(
-                            f"{FIREBASE_URL}/classes/{class_code}/votes/{voter}.json",
-                            data=json.dumps(object_votes)
-                        )
+                        if firebase_admin._apps:
+                            votes_ref = db.reference(f"/classes/{class_code}/votes/{voter}")
+                            votes_ref.set(object_votes)
+                        else:
+                            requests.put(
+                                f"{FIREBASE_URL}/classes/{class_code}/votes/{voter}.json",
+                                data=json.dumps(object_votes)
+                            )
             return data
         else:
             return {"ideas": [], "votes": {}}
-    return {"ideas": [], "votes": {}}
+    except Exception as e:
+        st.error(f"Error retrieving data: {str(e)}")
+        return {"ideas": [], "votes": {}}
 
 def save_data(data, class_code=None):
     """Save data to Firebase for a specific class"""
     if not class_code:
         class_code = st.session_state.class_code
-        
-    response = requests.put(
-        f"{FIREBASE_URL}/classes/{class_code}.json", 
-        data=json.dumps(data)
-    )
-    return response.status_code == 200
+    
+    try:
+        if firebase_admin._apps:
+            # Use authenticated Firebase Admin SDK
+            ref = db.reference(f"/classes/{class_code}")
+            ref.set(data)
+            return True
+        else:
+            # Fallback to unauthenticated access
+            response = requests.put(
+                f"{FIREBASE_URL}/classes/{class_code}.json", 
+                data=json.dumps(data)
+            )
+            return response.status_code == 200
+    except Exception as e:
+        st.error(f"Error saving data: {str(e)}")
+        return False
 
 def get_class_codes():
     """Get list of existing class codes"""
-    response = requests.get(f"{FIREBASE_URL}/class_access_codes.json")
-    if response.status_code == 200 and response.json():
-        return response.json()
-    return {}
+    try:
+        if firebase_admin._apps:
+            # Use authenticated Firebase Admin SDK
+            ref = db.reference("/class_access_codes")
+            data = ref.get()
+            return data or {}
+        else:
+            # Fallback to unauthenticated access
+            response = requests.get(f"{FIREBASE_URL}/class_access_codes.json")
+            if response.status_code == 200 and response.json():
+                return response.json()
+            return {}
+    except Exception as e:
+        st.error(f"Error getting class codes: {str(e)}")
+        return {}
 
 def get_teacher_password():
     """Get teacher password from Streamlit secrets or use fallback"""
@@ -122,12 +180,22 @@ def main():
                     class_codes = get_class_codes()
                     class_codes[new_class_code] = new_class_name
                     
-                    response = requests.put(
-                        f"{FIREBASE_URL}/class_access_codes.json",
-                        data=json.dumps(class_codes)
-                    )
+                    success = False
+                    if firebase_admin._apps:
+                        try:
+                            ref = db.reference("/class_access_codes")
+                            ref.set(class_codes)
+                            success = True
+                        except Exception as e:
+                            st.error(f"Error creating class: {str(e)}")
+                    else:
+                        response = requests.put(
+                            f"{FIREBASE_URL}/class_access_codes.json",
+                            data=json.dumps(class_codes)
+                        )
+                        success = response.status_code == 200
                     
-                    if response.status_code == 200:
+                    if success:
                         # Initialize empty data for the new class
                         save_data({"ideas": [], "votes": {}}, new_class_code)
                         
@@ -328,12 +396,22 @@ def main():
                     updated_data["votes"][student_name][idea_id] = rating
                     
                     # Save the entire updated votes structure
-                    vote_response = requests.put(
-                        f"{FIREBASE_URL}/classes/{st.session_state.class_code}/votes/{student_name}.json",
-                        data=json.dumps(updated_data["votes"][student_name])
-                    )
+                    success = False
+                    if firebase_admin._apps:
+                        try:
+                            votes_ref = db.reference(f"/classes/{st.session_state.class_code}/votes/{student_name}")
+                            votes_ref.set(updated_data["votes"][student_name])
+                            success = True
+                        except Exception as e:
+                            st.error(f"Error saving vote: {str(e)}")
+                    else:
+                        vote_response = requests.put(
+                            f"{FIREBASE_URL}/classes/{st.session_state.class_code}/votes/{student_name}.json",
+                            data=json.dumps(updated_data["votes"][student_name])
+                        )
+                        success = vote_response.status_code == 200
                     
-                    if vote_response.status_code == 200:
+                    if success:
                         # Update session state
                         st.session_state.current_votes[idea_id] = rating
                         return True
@@ -389,12 +467,22 @@ def main():
                                                 updated_votes.pop(idea_key, None)
                                                 
                                                 # Save the updated votes
-                                                vote_response = requests.put(
-                                                    f"{FIREBASE_URL}/classes/{st.session_state.class_code}/votes/{student_name}.json",
-                                                    data=json.dumps(updated_votes)
-                                                )
+                                                success = False
+                                                if firebase_admin._apps:
+                                                    try:
+                                                        votes_ref = db.reference(f"/classes/{st.session_state.class_code}/votes/{student_name}")
+                                                        votes_ref.set(updated_votes)
+                                                        success = True
+                                                    except Exception as e:
+                                                        st.error(f"Error removing vote: {str(e)}")
+                                                else:
+                                                    vote_response = requests.put(
+                                                        f"{FIREBASE_URL}/classes/{st.session_state.class_code}/votes/{student_name}.json",
+                                                        data=json.dumps(updated_votes)
+                                                    )
+                                                    success = vote_response.status_code == 200
                                                 
-                                                if vote_response.status_code == 200:
+                                                if success:
                                                     # Update session state
                                                     st.session_state.current_votes.pop(idea_key, None)
                                                     st.toast("Vote removed")
@@ -448,12 +536,22 @@ def main():
                                                     updated_votes.pop(idea_id, None)
                                                     
                                                     # Save the updated votes
-                                                    vote_response = requests.put(
-                                                        f"{FIREBASE_URL}/classes/{st.session_state.class_code}/votes/{student_name}.json",
-                                                        data=json.dumps(updated_votes)
-                                                    )
+                                                    success = False
+                                                    if firebase_admin._apps:
+                                                        try:
+                                                            votes_ref = db.reference(f"/classes/{st.session_state.class_code}/votes/{student_name}")
+                                                            votes_ref.set(updated_votes)
+                                                            success = True
+                                                        except Exception as e:
+                                                            st.error(f"Error removing vote: {str(e)}")
+                                                    else:
+                                                        vote_response = requests.put(
+                                                            f"{FIREBASE_URL}/classes/{st.session_state.class_code}/votes/{student_name}.json",
+                                                            data=json.dumps(updated_votes)
+                                                        )
+                                                        success = vote_response.status_code == 200
                                                     
-                                                    if vote_response.status_code == 200:
+                                                    if success:
                                                         # Update session state
                                                         st.session_state.current_votes.pop(idea_id, None)
                                                         st.success("Vote removed!")
@@ -475,12 +573,22 @@ def main():
                 st.divider()
                 if st.button("Clear All My Votes"):
                     # Delete just this user's votes using a direct path
-                    vote_path = f"votes/{student_name}"
-                    vote_response = requests.delete(
-                        f"{FIREBASE_URL}/classes/{st.session_state.class_code}/{vote_path}.json"
-                    )
+                    success = False
+                    if firebase_admin._apps:
+                        try:
+                            votes_ref = db.reference(f"/classes/{st.session_state.class_code}/votes/{student_name}")
+                            votes_ref.delete()
+                            success = True
+                        except Exception as e:
+                            st.error(f"Error clearing votes: {str(e)}")
+                    else:
+                        vote_path = f"votes/{student_name}"
+                        vote_response = requests.delete(
+                            f"{FIREBASE_URL}/classes/{st.session_state.class_code}/{vote_path}.json"
+                        )
+                        success = vote_response.status_code == 200
                     
-                    if vote_response.status_code == 200:
+                    if success:
                         # Clear session state
                         st.session_state.current_votes = {}
                         st.session_state.pop("randomized_ideas", None)
