@@ -226,6 +226,8 @@ def main():
         if st.button("Switch Class"):
             st.session_state.authenticated = False
             st.session_state.class_code = ""
+            st.session_state.pop("randomized_ideas", None)
+            st.session_state.pop("current_votes", None)
             st.rerun()
         
         # Reset button (only shown to teacher)
@@ -337,7 +339,7 @@ def main():
                 
                 # Auto-save toggle
                 if "auto_save" not in st.session_state:
-                    st.session_state.auto_save = False
+                    st.session_state.auto_save = True
                 
                 auto_save = st.checkbox("Auto-save votes when slider changes", 
                                        value=st.session_state.auto_save,
