@@ -128,6 +128,7 @@ def get_teacher_password():
         return "teacherpass"
 
 def main():
+    st.set_page_config(page_title="AI Ethics Voting", page_icon="🗳️", initial_sidebar_state="collapsed")
     # App header
     st.title("AI Ethics Collaborative Voting")
     
@@ -243,20 +244,6 @@ def main():
             else:
                 st.error("Incorrect password")
     
-    # Student name input
-    if "student_name" not in st.session_state:
-        st.session_state.student_name = ""
-    
-    student_name = st.text_input("Your Name or Group Name:", value=st.session_state.student_name)
-    if student_name != st.session_state.student_name:
-        # Name has changed, reset current votes in session state
-        if "current_votes" in st.session_state:
-            del st.session_state.current_votes
-        if "randomized_ideas" in st.session_state:
-            del st.session_state.randomized_ideas
-        st.session_state.student_name = student_name
-        st.rerun()
-    
     # Create tabs for the different modes
     idea_tab, voting_tab, results_tab = st.tabs(["💡 Scenario Submission", "🗳️ Voting", "📊 Results"])
     
@@ -268,18 +255,20 @@ def main():
         1. **Clearly Ethical ("Good")**: An AI use case where benefits are obvious and risks minimal
         2. **Clearly Unethical/Inappropriate ("Bad")**: A use case where the negative impact or misuse is evident
         3. **Borderline/Gray Area**: A scenario that isn't immediately obvious and could be seen as both ethical and problematic
-        
+
         Submit each scenario separately below. The class will vote on where each scenario falls on the ethical spectrum.
         """)
-        
+
+        group_name = st.text_input("Group Name:")
+
         # Input for new idea
         new_idea = st.text_area("Enter your scenario:", height=100)
-        
+
         if st.button("Submit Scenario"):
             # Refresh data before modifying to reduce conflicts
             data = get_data()
-            
-            if not student_name:
+
+            if not group_name:
                 st.error("Please enter your group name first!")
             elif not new_idea:
                 st.error("Please enter a scenario!")
@@ -290,7 +279,7 @@ def main():
                 
                 data["ideas"].append({
                     "idea": new_idea,
-                    "submitted_by": student_name,
+                    "submitted_by": group_name,
                     "timestamp": time.time()  # Add timestamp to help with conflict resolution
                 })
                 
@@ -319,18 +308,26 @@ def main():
     with voting_tab:
         st.header("Vote on AI Ethics Scenarios")
         st.markdown("""
-        **Recommended: Switch from group to individual voting. Change your name above.**
-        
         Review each scenario and rate it on a scale of 1-5:
         - **1**: This is a clearly *unethical* or *inappropriate* use of AI
         - **5**: This is a clearly *ethical* or *good* use of AI
-        
+
         Your votes help us understand our collective ethical judgments.
         """)
-        
+
+        if "student_name" not in st.session_state:
+            st.session_state.student_name = ""
+
+        student_name = st.text_input("Your Name:", value=st.session_state.student_name)
+        if student_name != st.session_state.student_name:
+            st.session_state.pop("current_votes", None)
+            st.session_state.pop("randomized_ideas", None)
+            st.session_state.student_name = student_name
+            st.rerun()
+
         # Refresh data for latest ideas
         data = get_data()
-        
+
         if not student_name:
             st.error("Please enter your name to vote!")
         else:
